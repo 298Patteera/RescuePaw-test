@@ -1,0 +1,176 @@
+groups:
+  # System Alerts
+  - name: system_alerts
+    interval: 30s
+    rules:
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is above 80% (current value: {{ $value }}%)"
+          
+      - alert: CriticalCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Critical CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is above 95% (current value: {{ $value }}%)"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is above 85% (current value: {{ $value }}%)"
+          
+      - alert: CriticalMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Critical memory usage on {{ $labels.instance }}"
+          description: "Memory usage is above 95% (current value: {{ $value }}%)"
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk space is below 15% on {{ $labels.mountpoint }} (current: {{ $value }}%)"
+
+      - alert: HighDiskIO
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High disk I/O on {{ $labels.instance }}"
+          description: "Disk I/O is high on {{ $labels.device }}"
+
+  # Application Alerts
+  - name: application_alerts
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: (sum(rate(http_requests_total{job="rescuepaw-backend",status=~"5.."}[5m])) / sum(rate(http_requests_total{job="rescuepaw-backend"}[5m]))) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: backend
+        annotations:
+          summary: "High error rate on backend"
+          description: "Error rate is above 5% (current value: {{ $value }}%)"
+          
+      - alert: CriticalErrorRate
+        expr: (sum(rate(http_requests_total{job="rescuepaw-backend",status=~"5.."}[5m])) / sum(rate(http_requests_total{job="rescuepaw-backend"}[5m]))) * 100 > 10
+        for: 2m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "Critical error rate on backend"
+          description: "Error rate is above 10% (current value: {{ $value }}%)"
+
+      - alert: SlowResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="rescuepaw-backend"}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: backend
+        annotations:
+          summary: "Slow response time on {{ $labels.instance }}"
+          description: "P95 response time is above 1s (current: {{ $value }}s)"
+
+      - alert: BackendDown
+        expr: up{job="rescuepaw-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "Backend instance is down"
+          description: "Backend instance {{ $labels.instance }} is not responding"
+
+      - alert: HighRequestRate
+        expr: sum(rate(http_requests_total{job="rescuepaw-backend"}[5m])) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: backend
+        annotations:
+          summary: "High request rate"
+          description: "Request rate is above 1000 req/s (current: {{ $value }} req/s)"
+
+  # Container Alerts
+  - name: container_alerts
+    interval: 30s
+    rules:
+      - alert: ContainerCPUHigh
+        expr: sum(rate(container_cpu_usage_seconds_total{name=~"backend.*"}[5m])) by (name) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: container
+        annotations:
+          summary: "High CPU usage in container {{ $labels.name }}"
+          description: "Container CPU usage is above 80% (current: {{ $value }}%)"
+
+      - alert: ContainerMemoryHigh
+        expr: (container_memory_usage_bytes{name=~"backend.*"} / container_spec_memory_limit_bytes{name=~"backend.*"}) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: container
+        annotations:
+          summary: "High memory usage in container {{ $labels.name }}"
+          description: "Container memory usage is above 85% (current: {{ $value }}%)"
+
+      - alert: ContainerRestarting
+        expr: rate(container_start_time_seconds[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          component: container
+        annotations:
+          summary: "Container {{ $labels.name }} is restarting"
+          description: "Container has restarted recently"
+
+  # Database Alerts (ถ้ามี)
+  - name: database_alerts
+    interval: 30s
+    rules:
+      - alert: DatabaseConnectionPoolExhausted
+        expr: db_connections_active{job="rescuepaw-backend"} / db_connections_max{job="rescuepaw-backend"} > 0.9
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Connection pool is over 90% utilized on {{ $labels.instance }}"
+
+      - alert: HighDatabaseQueryTime
+        expr: rate(db_query_duration_seconds_sum[5m]) / rate(db_query_duration_seconds_count[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Slow database queries"
+          description: "Average query time is above 1s"
